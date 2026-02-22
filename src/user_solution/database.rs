@@ -6,9 +6,9 @@ use std::{
 };
 
 use ahash::AHashMap;
-use memmap2::Mmap;
+use memmap2::{Advice, Mmap};
 
-use crate::database::{AsStr, Db, DbReader, DbWriter};
+use crate::database::{Db, DbReader, DbWriter};
 use crate::types::{DatabaseKey, StoredType};
 
 const MAGIC: &[u8; 4] = b"SDB\0";
@@ -20,7 +20,11 @@ fn index_path(path: &PathBuf) -> PathBuf {
 }
 
 fn key_str(key: &DatabaseKey<'_>) -> String {
-    key.as_str().as_ref().to_string()
+    let mut s = String::with_capacity(key.e.len() + 1 + key.stored_type.len());
+    s.push_str(&key.e);
+    s.push(':');
+    s.push_str(&key.stored_type);
+    s
 }
 
 pub struct CandidateDatabase {
@@ -219,6 +223,7 @@ impl<'a> DbReader<'a> for CandidateDatabase {
         if mmap_guard.is_none() {
             let file = File::open(&self.path).ok()?;
             let mmap = unsafe { Mmap::map(&file).ok()? };
+            let _ = mmap.advise(Advice::Random);
             if json_offset + json_len <= mmap.len() {
                 *mmap_guard = Some(mmap);
                 *self.dirty.borrow_mut() = false;
