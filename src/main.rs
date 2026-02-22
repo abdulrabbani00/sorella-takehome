@@ -8,7 +8,10 @@ use takehome_rust_optimize::{
 };
 
 fn main() {
+    let default_only = std::env::args().any(|a| a == "--default-only");
+
     println!("running default");
+    let start = std::time::Instant::now();
     runner(
         |path| {
             let init = DefaultDatabase::<DatabaseKey, StoredType>::args();
@@ -16,6 +19,12 @@ fn main() {
         },
         DefaultGenerator
     );
+    let elapsed = start.elapsed();
+    println!("default completed in: {:?}", elapsed);
+
+    if default_only {
+        return;
+    }
 
     println!("running candidate");
     runner(
