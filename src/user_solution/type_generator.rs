@@ -1,17 +1,24 @@
+use std::marker::PhantomData;
+
+use rand::{
+    Rng,
+    distr::{Alphanumeric, SampleString}
+};
+
 use crate::{
-    type_generator::TypeGenerator,
-    types::{DatabaseKey, StoredType}
+    type_generator::{RANGE_SIZE, TypeGenerator},
+    types::{DatabaseKey, RandomNestedStructure, StoredType}
 };
 
 pub struct CandidateTypeGen;
 
 impl<'a> TypeGenerator<'a> for CandidateTypeGen {
-    type Data = StoredType<'static>;
+    type Data = StoredType<'a>;
     type InitArgs = u8;
-    type Key = DatabaseKey<'static>;
+    type Key = DatabaseKey<'a>;
 
     fn new(_: Self::InitArgs) -> Self {
-        todo!()
+        CandidateTypeGen
     }
 
     fn args() -> Self::InitArgs {
@@ -19,10 +26,28 @@ impl<'a> TypeGenerator<'a> for CandidateTypeGen {
     }
 
     fn generate_key(&mut self) -> Self::Key {
-        todo!()
+        let mut rng = rand::rng();
+        let string_size = rng.random_range(RANGE_SIZE);
+        let s1 = Alphanumeric.sample_string(&mut rng, string_size);
+        let string_size = rng.random_range(RANGE_SIZE);
+        let s2 = Alphanumeric.sample_string(&mut rng, string_size);
+        DatabaseKey { e: s1, stored_type: s2, _p: PhantomData }
     }
 
     fn generate_data(&mut self) -> Self::Data {
-        todo!()
+        let mut rng = rand::rng();
+        let string_size = rng.random_range(RANGE_SIZE);
+        let entry = Alphanumeric.sample_string(&mut rng, string_size);
+        let data = (0usize..rng.random_range(RANGE_SIZE))
+            .map(|_| RandomNestedStructure {
+                val:   {
+                    let string_size = rng.random_range(RANGE_SIZE);
+                    Alphanumeric.sample_string(&mut rng, string_size)
+                },
+                score: rng.random(),
+                _p:    PhantomData
+            })
+            .collect();
+        StoredType { entry, one: rng.random(), data }
     }
 }
