@@ -6,6 +6,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use memmap2::Mmap;
 
 use crate::database::{AsStr, Db, DbReader, DbWriter};
 use crate::types::{DatabaseKey, StoredType};
@@ -26,8 +27,10 @@ pub struct CandidateDatabase {
     path:       PathBuf,
     index_path: PathBuf,
     writer:     RefCell<BufWriter<File>>,
+    mmap:       RefCell<Option<Mmap>>,
     index:      AHashMap<String, (u64, u32)>,
-    data_end:   u64
+    data_end:   u64,
+    dirty:      RefCell<bool>
 }
 
 impl CandidateDatabase {
@@ -125,8 +128,10 @@ impl<'a> Db<'a> for CandidateDatabase {
             path: path.clone(),
             index_path,
             writer: RefCell::new(writer),
+            mmap: RefCell::new(None),
             index,
-            data_end
+            data_end,
+            dirty: RefCell::new(false)
         }
     }
 
@@ -159,6 +164,7 @@ impl<'a> DbWriter<'a> for CandidateDatabase {
         let json_offset = self.data_end + 4 + (key_len as u64) + 4;
         self.index.insert(key_str, (json_offset, json_len));
         self.data_end = json_offset + (json_len as u64);
+        *self.dirty.borrow_mut() = true;
     }
 
     fn remove(&mut self, key: &Self::Key) -> Option<Self::Data> {
@@ -186,6 +192,7 @@ impl<'a> DbWriter<'a> for CandidateDatabase {
 
         self.index.remove(&key_str);
         self.data_end += 4 + (key_len as u64) + 4;
+        *self.dirty.borrow_mut() = true;
 
         Some(value)
     }
@@ -202,9 +209,31 @@ impl<'a> DbReader<'a> for CandidateDatabase {
         if json_len == 0 {
             return None;
         }
-        let mut buf = vec![0u8; json_len as usize];
+        let json_offset = json_offset as usize;
+        let json_len = json_len as usize;
+
+        let mut mmap_guard = self.mmap.borrow_mut();
+        if *self.dirty.borrow() {
+            *mmap_guard = None;
+        }
+        if mmap_guard.is_none() {
+            let file = File::open(&self.path).ok()?;
+            let mmap = unsafe { Mmap::map(&file).ok()? };
+            if json_offset + json_len <= mmap.len() {
+                *mmap_guard = Some(mmap);
+                *self.dirty.borrow_mut() = false;
+            }
+        }
+
+        if let Some(ref mmap) = *mmap_guard {
+            if json_offset + json_len <= mmap.len() {
+                return serde_json::from_slice(&mmap[json_offset..json_offset + json_len]).ok();
+            }
+        }
+
+        let mut buf = vec![0u8; json_len];
         let mut file = File::open(&self.path).ok()?;
-        file.seek(SeekFrom::Start(json_offset)).ok()?;
+        file.seek(SeekFrom::Start(json_offset as u64)).ok()?;
         file.read_exact(&mut buf).ok()?;
         serde_json::from_slice(&buf).ok()
     }
