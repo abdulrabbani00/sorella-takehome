@@ -34,6 +34,10 @@ pub struct CandidateDatabase {
     data_end: u64
 }
 
+fn key_str(key: &DatabaseKey<'_>) -> String {
+    key.as_str().as_ref().to_string()
+}
+
 impl CandidateDatabase {
     fn open_for_read_write(path: &PathBuf) -> std::io::Result<File> {
         OpenOptions::new()
@@ -42,10 +46,6 @@ impl CandidateDatabase {
             .create(true)
             .append(false)
             .open(path)
-    }
-
-    fn key_str(key: &DatabaseKey<'_>) -> String {
-        key.as_str().as_ref().to_string()
     }
 }
 
@@ -109,7 +109,7 @@ impl<'a> DbWriter<'a> for CandidateDatabase {
     type Key = DatabaseKey<'a>;
 
     fn write(&mut self, key: &Self::Key, data: &Self::Data) {
-        let key_str = Self::key_str(key);
+        let key_str = key_str(key);
         let key_bytes = key_str.as_bytes();
         let json = serde_json::to_vec(data).expect("Failed to serialize");
         let key_len = key_bytes.len() as u32;
@@ -133,7 +133,7 @@ impl<'a> DbWriter<'a> for CandidateDatabase {
     }
 
     fn remove(&mut self, key: &Self::Key) -> Option<Self::Data> {
-        let key_str = Self::key_str(key);
+        let key_str = key_str(key);
         let &(json_offset, json_len) = self.index.get(&key_str)?;
         let mut buf = vec![0u8; json_len as usize];
         self.file.seek(SeekFrom::Start(json_offset)).ok()?;
@@ -167,7 +167,7 @@ impl<'a> DbReader<'a> for CandidateDatabase {
     type Key = DatabaseKey<'a>;
 
     fn read(&self, key: &Self::Key) -> Option<Self::Data> {
-        let key_str = Self::key_str(key);
+        let key_str = key_str(key);
         let &(json_offset, json_len) = self.index.get(&key_str)?;
         if json_len == 0 {
             return None;
